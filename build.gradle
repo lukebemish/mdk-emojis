@@ -11,6 +11,7 @@ group = mod_group_id
 
 repositories {
     mavenLocal()
+    maven { url = 'https://maven.lukebemish.dev/releases/' }
 }
 
 base {
@@ -145,4 +146,25 @@ publishing {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+// Make emoji identifiers work
+configurations {
+    agents
+}
+
+dependencies {
+    agents 'dev.lukebemish:emojiidentifiers:0.1.2'
+}
+
+tasks.named('compileJava', JavaCompile) {
+    dependsOn configurations.agents
+    def files = objects.fileCollection()
+    files.from(configurations.agents)
+    inputs.files(files)
+    CommandLineArgumentProvider lateArgs = {
+        files.files.collect { "-javaagent:${it.absolutePath}" as String }
+    }
+    options.forkOptions.jvmArgumentProviders.add lateArgs
+    options.fork = true
 }
