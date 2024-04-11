@@ -168,3 +168,75 @@ tasks.named('compileJava', JavaCompile) {
     options.forkOptions.jvmArgumentProviders.add lateArgs
     options.fork = true
 }
+
+tasks.named('jar', Jar) {
+    exclude('**/*')
+    archiveClassifier.set 'manifest'
+}
+
+abstract class AltZip extends DefaultTask {
+    @InputFile
+    abstract RegularFileProperty getSourceJar()
+
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract ConfigurableFileCollection getOtherSources()
+
+    @OutputFile
+    abstract RegularFileProperty getOutputJar()
+
+    @Inject
+    abstract ExecOperations getExecOperations()
+
+    @Inject
+    AltZip() {}
+
+    @TaskAction
+    void execute() {
+        def target = new File("${temporaryDir}/files")
+        if (target.exists()) {
+            target.deleteDir()
+        }
+        if (outputJar.asFile.get().exists()) {
+            outputJar.asFile.get().delete()
+        }
+        target.mkdirs()
+        execOperations.exec {
+            commandLine 'unzip', sourceJar.asFile.get(), '-d', target
+        }
+        otherSources.files.each { f ->
+            execOperations.exec {
+                commandLine 'cp', '-r', "${f}/.", "${target}/"
+            }
+        }
+        execOperations.exec {
+            workingDir = target
+            commandLine 'zip', '-p', outputJar.asFile.get(), '-r', './'
+        }
+    }
+}
+
+tasks.register('jarAlt', AltZip) {
+    dependsOn tasks.jar
+    dependsOn sourceSets.main.output.dirs
+
+    sourceJar.set(tasks.jar.archiveFile)
+    outputJar.set(project.file("build/libs/${base.archivesName.get()}-${project.version}.jar"))
+    otherSources.from(sourceSets.main.output)
+}
+
+configurations.runtimeElements.artifacts.clear()
+configurations.apiElements.artifacts.clear()
+
+artifacts {
+    runtimeElements(tasks.jarAlt.outputJar) {
+        builtBy tasks.jarAlt
+    }
+    apiElements(tasks.jarAlt.outputJar) {
+        builtBy tasks.jarAlt
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn tasks.jarAlt
+}
